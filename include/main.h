@@ -3,7 +3,7 @@ enum
 {
     user,
     nice_stat,
-    system,
+    system_stat,
     idle,
     iowait,
     irq,

@@ -6,12 +6,14 @@
 #include <stdint.h>
 #include <signal.h>
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 
 /*-------------------------------------DEFINES----------------------------------*/
+ #define handle_error_en(en, msg) do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
 #define NON_IDLE(meas,i) cpu_usage_data.cpu_data[meas][i][user] + cpu_usage_data.cpu_data[meas][i][nice_stat] + \
-					cpu_usage_data.cpu_data[meas][i][system] + cpu_usage_data.cpu_data[meas][i][irq] + \
+					cpu_usage_data.cpu_data[meas][i][system_stat] + cpu_usage_data.cpu_data[meas][i][irq] + \
 					cpu_usage_data.cpu_data[meas][i][softirq] + cpu_usage_data.cpu_data[meas][i][steal]
 
 #define IDLE(meas,i) cpu_usage_data.cpu_data[meas][i][idle] + cpu_usage_data.cpu_data[meas][i][iowait]
@@ -99,11 +101,14 @@ void* Reader_Thread(void* args)
 
 void* Analyzer_Thread(void* args)
 {
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 500000000;
 	while(1)
-	{
+	{   printf("t0");
         pthread_mutex_lock(&meas_lock);
         while(!meas_done)
-        {
+        {   printf("t1");
             pthread_cond_wait(&meas_condition, &meas_lock);
         }
         meas_done=0;
@@ -129,6 +134,8 @@ void* Analyzer_Thread(void* args)
         printf("Analyzer OUT\n");
         pthread_cond_signal(&meas_condition);
         pthread_mutex_unlock(&meas_lock);
+        nanosleep(&ts, NULL);
+        
 	}
 }
 
@@ -189,7 +196,7 @@ int main()
             printf("Thread not created.\n");
             return 0; /*return from main*/
     }
-    
+
     struct sigaction action;
     memset(&action, 0, sizeof(struct sigaction));
     action.sa_handler = term;
@@ -207,6 +214,33 @@ int main()
                     printf("Loop run was interrupted with %d "
                                     "sec to go, finishing...\n", t);
                     t = sleep(t);
+
+                    void* res=NULL;
+                    int ret;
+                    printf("1\n");
+
+                    ret = pthread_cancel(id_printer);
+                    if(ret != 0)
+                        handle_error_en(ret, "pthread_cancel");
+                    ret = pthread_join(id_printer, NULL);
+                    if(ret != 0)
+                        handle_error_en(ret, "pthread_join");
+
+                    ret = pthread_cancel(id_analyzer);
+                    if(ret != 0)
+                        handle_error_en(ret, "pthread_cancel");
+                    ret = pthread_join(id_analyzer, NULL);
+                    if(ret != 0)
+                        handle_error_en(ret, "pthread_join");
+
+                    ret = pthread_cancel(id_reader);
+                    if(ret != 0)
+                        handle_error_en(ret, "pthread_cancel");
+                    ret = pthread_join(id_reader, NULL);
+                    if(ret != 0)
+                        handle_error_en(ret, "pthread_join");
+
+                    pthread_mutex_destroy(&meas_lock);
             }
             //printf("Finished loop run %d.\n", loop++);
     }

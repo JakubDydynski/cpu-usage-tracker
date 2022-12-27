@@ -152,3 +152,6 @@ CPU_Percentage = (totald - idled)/totald
 //                 //print cpu usage in %
 //                 printf("Cpu %d: %d%% \n", i, cpu_usage_data.cpu_usage_in_percent[i]);
 //         } 
+
+//6. Należy także zaimplementować przechwytywanie sygnału SIGTERM i zadbać o odpowiednie zamknięcie
+//aplikacji (zamknięcie pliku, zwolnienie pamięci, zakończenie wątków).
