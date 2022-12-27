@@ -2,7 +2,7 @@
 enum
 {
     user,
-    nice,
+    nice_stat,
     system,
     idle,
     iowait,
@@ -11,10 +11,10 @@ enum
     steal,
     guest,
     guest_nice
-}
+};
 
 enum
 {
     first,
     next
-}
+};
