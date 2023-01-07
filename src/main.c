@@ -17,7 +17,7 @@
 					cpu_usage_data.cpu_data[meas][i][softirq] + cpu_usage_data.cpu_data[meas][i][steal]
 
 #define IDLE(meas,i) cpu_usage_data.cpu_data[meas][i][idle] + cpu_usage_data.cpu_data[meas][i][iowait]
-#define NUM_OF_CPU 8 
+#define NUM_OF_CPU 12 
 #define NUM_OF_CPU_FIELDS 10
 #define NUM_OF_MEASUR 2
 
@@ -28,6 +28,7 @@ typedef struct{
 	uint32_t cpu_data[NUM_OF_MEASUR][NUM_OF_CPU][NUM_OF_CPU_FIELDS]; // 2 MEASUREMENTS 7 TABLES EACH 10 ELEMENTS
 	uint32_t cpu_usage_in_percent[NUM_OF_CPU];
 }cpu_usage_t;
+
 /*-------------------------------------GLOBALS----------------------------------*/
 char trashc[10];
 int trashi[10];
@@ -48,6 +49,7 @@ void term(int signum)
 		done = 1;
 }
 
+/*-------------------------------------THREADS----------------------------------*/
 void* Reader_Thread(void* args)
 {   
     struct timespec ts;
@@ -71,7 +73,8 @@ void* Reader_Thread(void* args)
             if (fp == NULL)
             {
                 printf("ERROR: couldn't read from /proc/stat");
-                // abort or send error to logger or smth
+                // abort and send error to logger or smth
+                pthread_exit(NULL);
             }
             else
             {
@@ -95,7 +98,6 @@ void* Reader_Thread(void* args)
         printf("Reader OUT\n");
         pthread_cond_signal(&meas_condition);
         pthread_mutex_unlock(&meas_lock);
-        
 	}
 }
 
@@ -105,21 +107,19 @@ void* Analyzer_Thread(void* args)
     ts.tv_sec = 0;
     ts.tv_nsec = 500000000;
 	while(1)
-	{   printf("t0");
+	{
         pthread_mutex_lock(&meas_lock);
         while(!meas_done)
-        {   printf("t1");
+        {
             pthread_cond_wait(&meas_condition, &meas_lock);
         }
         meas_done=0;
         printf("Analyzer IN\n");
         for (uint8_t i=0; i<NUM_OF_CPU; i++)
         {
-            //process the data and claculate cpu usage in %
             uint32_t idle_first = IDLE(first, i);
             uint32_t non_idle_first = NON_IDLE(first, i);
             uint32_t total_first = idle_first + non_idle_first;
-
 
             uint32_t idle_next = IDLE(next, i);
             uint32_t non_idle_next = NON_IDLE(next, i);
@@ -135,7 +135,6 @@ void* Analyzer_Thread(void* args)
         pthread_cond_signal(&meas_condition);
         pthread_mutex_unlock(&meas_lock);
         nanosleep(&ts, NULL);
-        
 	}
 }
 
@@ -161,89 +160,79 @@ void* Printer_Thread(void* args)
 
 int main()
 {
-    /*creating thread id*/
     pthread_t id_reader;
     pthread_t id_analyzer;
     pthread_t id_printer;
     int ret;
+    struct sigaction action;
+
+    memset(&action, 0, sizeof(struct sigaction));
+    action.sa_handler = term;
+    sigaction(SIGTERM, &action, NULL);
 
     pthread_mutex_init(&meas_lock, NULL);
     pthread_cond_init(&meas_condition, NULL);
 
     ret = pthread_create(&id_reader, NULL, &Reader_Thread, NULL);
-    if(ret==0){
+    if(ret==0)
+    {
             printf("Thread created successfully.\n");
     }
-    else{
+    else
+    {
             printf("Thread not created.\n");
             return 0; /*return from main*/
     }
 
     ret = pthread_create(&id_analyzer, NULL, &Analyzer_Thread, NULL);
-    if(ret==0){
+    if(ret==0)
+    {
             printf("Thread created successfully.\n");
     }
-    else{
+    else
+    {
             printf("Thread not created.\n");
             return 0; /*return from main*/
     }
 
     ret = pthread_create(&id_printer, NULL, &Printer_Thread, NULL);
-    if(ret==0){
+    if(ret==0)
+    {
             printf("Thread created successfully.\n");
     }
-    else{
+    else
+    {
             printf("Thread not created.\n");
             return 0; /*return from main*/
     }
 
-    struct sigaction action;
-    memset(&action, 0, sizeof(struct sigaction));
-    action.sa_handler = term;
-    sigaction(SIGTERM, &action, NULL);
-
-    int loop = 0;
-
     while (!done)
-    {
-            int t = sleep(3);
-            /* sleep returns the number of seconds left if
-                * interrupted */
-            while (t > 0)
-            {
-                    printf("Loop run was interrupted with %d "
-                                    "sec to go, finishing...\n", t);
-                    t = sleep(t);
+    {}
 
-                    void* res=NULL;
-                    int ret;
-                    printf("1\n");
+    void* res=NULL;
 
-                    ret = pthread_cancel(id_printer);
-                    if(ret != 0)
-                        handle_error_en(ret, "pthread_cancel");
-                    ret = pthread_join(id_printer, NULL);
-                    if(ret != 0)
-                        handle_error_en(ret, "pthread_join");
+    ret = pthread_cancel(id_printer);
+    if(ret != 0)
+        handle_error_en(ret, "pthread_cancel");
+    ret = pthread_join(id_printer, NULL);
+    if(ret != 0)
+        handle_error_en(ret, "pthread_join");
 
-                    ret = pthread_cancel(id_analyzer);
-                    if(ret != 0)
-                        handle_error_en(ret, "pthread_cancel");
-                    ret = pthread_join(id_analyzer, NULL);
-                    if(ret != 0)
-                        handle_error_en(ret, "pthread_join");
+    ret = pthread_cancel(id_analyzer);
+    if(ret != 0)
+        handle_error_en(ret, "pthread_cancel");
+    ret = pthread_join(id_analyzer, NULL);
+    if(ret != 0)
+        handle_error_en(ret, "pthread_join");
 
-                    ret = pthread_cancel(id_reader);
-                    if(ret != 0)
-                        handle_error_en(ret, "pthread_cancel");
-                    ret = pthread_join(id_reader, NULL);
-                    if(ret != 0)
-                        handle_error_en(ret, "pthread_join");
+    ret = pthread_cancel(id_reader);
+    if(ret != 0)
+        handle_error_en(ret, "pthread_cancel");
+    ret = pthread_join(id_reader, NULL);
+    if(ret != 0)
+        handle_error_en(ret, "pthread_join");
 
-                    pthread_mutex_destroy(&meas_lock);
-            }
-            //printf("Finished loop run %d.\n", loop++);
-    }
+    pthread_mutex_destroy(&meas_lock);
 
     printf("done.\n");
     return 0;
