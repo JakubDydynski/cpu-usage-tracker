@@ -23,3 +23,6 @@ build:
 
 clean:
     make clean
+
+test:
+    make test

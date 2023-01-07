@@ -1,41 +1,47 @@
 CC = $(TOOLCHAIN)
 IDIR = ../include
 GCCFLAGS=-Wall -Wextra -g -I$(IDIR) -lpthread
-CLANGFLAGS=-Weverything -I$(IDIR) -lpthread
+CLANGFLAGS=-Weverything -I$(IDIR) -lpthread -Wno-disabled-macro-expansion -Wno-unused-command-line-argument
 LDLIBS=
 ODIR = obj
+BUILD = build
 FLAGS =
 
-# System powinien wspierać dynamiczne zmiany kompilatora (czytanie zmiennej środowiskowej CC)., czyli coś typu make toolchain= i tutaj gcc lub clang
 
-
-
-_DEPS = main.h
+_DEPS = main.h util.h
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
 
-_OBJ = main.o
+_OBJ = main.o util.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
-ifeq ($(TOOLCHAIN), CLANG)
-	FLAGS = $(CLANGFLAGS)
+
+ifndef TOOLCHAIN
+  $(info Undefined toolchain, assigning default one!)
+  CC=gcc
+  FLAGS = $(GCCFLAGS)
 else
-	FLAGS = $(GCCFLAGS)
+	ifeq ($(TOOLCHAIN), clang)
+		FLAGS = $(CLANGFLAGS)
+	else
+		ifeq ($(TOOLCHAIN), gcc)
+			FLAGS = $(GCCFLAGS)
+		else
+			$(error Unsupported toolchain defined!)
+		endif
+	endif
 endif
+
+
 
 $(ODIR)/%.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(FLAGS)
 
-all: $(OBJ)
-	$(CC) -o $@ $^ $(FLAGS) $(LDLIBS)
+$(BUILD)/all: $(OBJ)
+	$(CC) -o $@ $^ $(FLAGS) $(LDLIBS) 
 
 .PHONY: clean
 
 clean:
-	rm -f $(ODIR)/*.o *~ core $(INCDIR)/*~ all
+	rm -f $(ODIR)/*.o *~ core $(INCDIR)/*~ $(BUILD)/*
 
 test:
-# Aplikacja musi posiadać przynajmniej 1 automatyczny test. Może być to test jednostkowy napisany w
-#C (budowany za pomocą make test) lub inny test napisany w C lub w języku skryptowym odpalającym
-#cały program i testujący jakieś zachowanie aplikacji
-#. Do pisania testów jednostkowych, nie potrzebujesz żadnej dodatkowej biblioteki. Proste testy możesz
-#napisać z użyciem wbudowanej funkcji assert()

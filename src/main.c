@@ -1,45 +1,35 @@
 #include "main.h"
-#include <pthread.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <errno.h>
-#include <stdint.h>
-#include <signal.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
-
+#include "util.h"
 /*-------------------------------------DEFINES----------------------------------*/
  #define handle_error_en(en, msg) do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
-#define NON_IDLE(meas,i) cpu_usage_data.cpu_data[meas][i][user] + cpu_usage_data.cpu_data[meas][i][nice_stat] + \
-					cpu_usage_data.cpu_data[meas][i][system_stat] + cpu_usage_data.cpu_data[meas][i][irq] + \
-					cpu_usage_data.cpu_data[meas][i][softirq] + cpu_usage_data.cpu_data[meas][i][steal]
+#define NON_IDLE(meas, i, cpu_num) cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * user)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * nice_stat)] + \
+					cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * system_stat)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * irq)] + \
+					cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * softirq)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * steal)]
 
-#define IDLE(meas,i) cpu_usage_data.cpu_data[meas][i][idle] + cpu_usage_data.cpu_data[meas][i][iowait]
-#define NUM_OF_CPU 12 
+#define IDLE(meas, i, cpu_num) cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * idle)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * iowait)]
 #define NUM_OF_CPU_FIELDS 10
 #define NUM_OF_MEASUR 2
 
-#warning "Before use check whether define NUM_OF_CPU correspond to number of cpus of the machine"
-#warning "Create function to count number of cpus"
-/*-------------------------------------TYPEDEF----------------------------------*/
-typedef struct{
-	uint32_t cpu_data[NUM_OF_MEASUR][NUM_OF_CPU][NUM_OF_CPU_FIELDS]; // 2 MEASUREMENTS 7 TABLES EACH 10 ELEMENTS
-	uint32_t cpu_usage_in_percent[NUM_OF_CPU];
-}cpu_usage_t;
+// typedef struct{
+// 	uint32_t cpu_data[NUM_OF_MEASUR][NUM_OF_CPU][NUM_OF_CPU_FIELDS];
+// 	uint32_t cpu_usage_in_percent[NUM_OF_CPU];
+// }cpu_usage_t;
 
 /*-------------------------------------GLOBALS----------------------------------*/
 char trashc[10];
 int trashi[10];
-
-cpu_usage_t cpu_usage_data;
 
 pthread_mutex_t meas_lock;
 pthread_cond_t meas_condition;
 
 uint8_t meas_done=0;
 uint8_t calc_done=1;
+FILE *fp;
+
+uint8_t Num_of_cpu=0;
+uint32_t* cpu_data_ptr;
+uint32_t* cpu_usage_in_percent;
 
 /*-------------------------------------SIGTERM----------------------------------*/
 volatile sig_atomic_t done = 0;
@@ -68,7 +58,6 @@ void* Reader_Thread(void* args)
         printf("Reader IN\n");
         for (uint8_t k=0; k<NUM_OF_MEASUR; k++)
         {
-            FILE *fp;
             fp = fopen("/proc/stat", "r");
             if (fp == NULL)
             {
@@ -82,12 +71,12 @@ void* Reader_Thread(void* args)
                 fscanf(fp, "%s ", trashc);
                 fscanf(fp, " %*d %*d %*d %*d %*d %*d %*d %*d %*d %d" , trashi); 
                 
-                for (uint8_t i=0; i<NUM_OF_CPU; i++)
+                for (uint8_t i=0; i<Num_of_cpu; i++)
                 {
                     fscanf(fp, "%s ", trashc);
                     for (uint8_t j=0; j<NUM_OF_CPU_FIELDS; j++)
                     {
-                            fscanf(fp, "%d ", &cpu_usage_data.cpu_data[k][i][j]);
+                            fscanf(fp, "%d ", &cpu_data_ptr[k + Num_of_cpu*(i + NUM_OF_CPU_FIELDS * j)]);
                     }
                 }
                 fclose(fp);
@@ -115,20 +104,20 @@ void* Analyzer_Thread(void* args)
         }
         meas_done=0;
         printf("Analyzer IN\n");
-        for (uint8_t i=0; i<NUM_OF_CPU; i++)
+        for (uint8_t i=0; i<Num_of_cpu; i++)
         {
-            uint32_t idle_first = IDLE(first, i);
-            uint32_t non_idle_first = NON_IDLE(first, i);
+            uint32_t idle_first = IDLE(first, i, Num_of_cpu);
+            uint32_t non_idle_first = NON_IDLE(first, i, Num_of_cpu);
             uint32_t total_first = idle_first + non_idle_first;
 
-            uint32_t idle_next = IDLE(next, i);
-            uint32_t non_idle_next = NON_IDLE(next, i);
+            uint32_t idle_next = IDLE(next, i, Num_of_cpu);
+            uint32_t non_idle_next = NON_IDLE(next, i, Num_of_cpu);
             uint32_t total_next = idle_next + non_idle_next;
 
             uint32_t totald = total_next - total_first;
             uint32_t idled = idle_next - idle_first;
 
-            cpu_usage_data.cpu_usage_in_percent[i] = ((totald - idled)*100)/totald;
+            cpu_usage_in_percent[i] = ((totald - idled)*100)/totald;
         }
         calc_done=1;
         printf("Analyzer OUT\n");
@@ -148,9 +137,9 @@ void* Printer_Thread(void* args)
 	{ 
         pthread_mutex_lock(&meas_lock);
         printf("Printer IN\n");
-        for (uint8_t i=0; i<NUM_OF_CPU; i++)
+        for (uint8_t i=0; i<Num_of_cpu; i++)
         {
-            printf("Cpu %d: %d%% \n", i, cpu_usage_data.cpu_usage_in_percent[i]);
+            printf("Cpu %d: %d%% \n", i, cpu_usage_in_percent[i]);
         } 
         printf("Printer OUT\n");
         pthread_mutex_unlock(&meas_lock);
@@ -165,6 +154,20 @@ int main()
     pthread_t id_printer;
     int ret;
     struct sigaction action;
+
+    Num_of_cpu = count_cpu_number();
+    cpu_data_ptr = (uint32_t*)malloc(NUM_OF_CPU_FIELDS * NUM_OF_MEASUR * Num_of_cpu * sizeof(uint32_t));
+    if (!cpu_data_ptr) 
+    {
+        perror("malloc");
+        return EXIT_FAILURE;
+    }
+    cpu_usage_in_percent = (uint32_t*)malloc(Num_of_cpu * sizeof(uint32_t));
+    if (!cpu_usage_in_percent) 
+    {
+        perror("malloc");
+        return EXIT_FAILURE;
+    }
 
     memset(&action, 0, sizeof(struct sigaction));
     action.sa_handler = term;
@@ -233,6 +236,8 @@ int main()
         handle_error_en(ret, "pthread_join");
 
     pthread_mutex_destroy(&meas_lock);
+
+    fclose(fp);
 
     printf("done.\n");
     return 0;
