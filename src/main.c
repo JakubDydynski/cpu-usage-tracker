@@ -11,7 +11,7 @@
 #include <time.h>
 
 /*-------------------------------------DEFINES----------------------------------*/
-#define ENABLE_DEBUG 1
+#define ENABLE_DEBUG 0
 
 #if ENABLE_DEBUG
     #define LOG_MSG printf
@@ -21,11 +21,11 @@
 
  #define handle_error_en(en, msg) do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
-#define NON_IDLE(meas, i, cpu_num) cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * user)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * nice_stat)] + \
-					cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * system_stat)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * irq)] + \
-					cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * softirq)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * steal)]
+#define NON_IDLE(meas, i, cpu_num) cpu_data_ptr[meas + NUM_OF_MEASUR * (i + cpu_num * user)] + cpu_data_ptr[meas + NUM_OF_MEASUR * (i + cpu_num * nice_stat)] + \
+					cpu_data_ptr[meas + NUM_OF_MEASUR * (i + cpu_num * system_stat)] + cpu_data_ptr[meas + NUM_OF_MEASUR * (i + cpu_num * irq)] + \
+					cpu_data_ptr[meas + NUM_OF_MEASUR * (i + cpu_num * softirq)] + cpu_data_ptr[meas + NUM_OF_MEASUR * (i + cpu_num * steal)]
 
-#define IDLE(meas, i, cpu_num) cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * idle)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * iowait)]
+#define IDLE(meas, i, cpu_num) cpu_data_ptr[meas + NUM_OF_MEASUR * (i + cpu_num * idle)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * iowait)]
 #define NUM_OF_CPU_FIELDS 10
 #define NUM_OF_MEASUR 2
 
@@ -89,7 +89,7 @@ void* Reader_Thread(void* args)
         calc_done=0;
 
         LOG_MSG("Reader IN\n");
-        for (uint8_t k=0; k<NUM_OF_MEASUR; k++)
+        for (int k=0; k<NUM_OF_MEASUR; k++)
         {
             fp = fopen("/proc/stat", "r");
             if (fp == NULL)
@@ -104,12 +104,12 @@ void* Reader_Thread(void* args)
                 fscanf(fp, "%s ", trashc);
                 fscanf(fp, " %*d %*d %*d %*d %*d %*d %*d %*d %*d %d" , trashi); 
                 
-                for (uint8_t i=0; i<Num_of_cpu; i++)
+                for (int i=0; i<Num_of_cpu; i++)
                 {
                     fscanf(fp, "%s ", trashc);
-                    for (uint8_t j=0; j<NUM_OF_CPU_FIELDS; j++)
+                    for (int j=0; j<NUM_OF_CPU_FIELDS; j++)
                     {
-                            fscanf(fp, "%d ", &cpu_data_ptr[k + Num_of_cpu*(i + NUM_OF_CPU_FIELDS * j)]);
+                            fscanf(fp, "%d ", &cpu_data_ptr[k + NUM_OF_MEASUR*(i + Num_of_cpu * j)]);
                     }
                 }
                 fclose(fp);
@@ -143,7 +143,7 @@ void* Analyzer_Thread(void* args)
         }
         meas_done=0;
         LOG_MSG("Analyzer IN\n");
-        for (uint8_t i=0; i<Num_of_cpu; i++)
+        for (int i=0; i<Num_of_cpu; i++)
         {
             int idle_first = IDLE(first, i, Num_of_cpu);
             int non_idle_first = NON_IDLE(first, i, Num_of_cpu);
@@ -155,7 +155,6 @@ void* Analyzer_Thread(void* args)
 
             int totald = total_next - total_first;
             int idled = idle_next - idle_first;
-           // printf("totald %d idled %d\n", totald, idled);
             cpu_usage_in_percent[i] = ((totald - idled)*100)/totald;
         }
         calc_done=1;
