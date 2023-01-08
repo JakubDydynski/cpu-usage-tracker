@@ -21,4 +21,10 @@ enum
     next
 };
 
+enum
+{
+    sigterm_exit=1,
+    watchdog_exit
+};
+
 #endif

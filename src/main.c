@@ -11,6 +11,14 @@
 #include <time.h>
 
 /*-------------------------------------DEFINES----------------------------------*/
+#define ENABLE_DEBUG 1
+
+#if ENABLE_DEBUG
+    #define LOG_MSG printf
+#else
+    #define LOG_MSG(...)
+#endif
+
  #define handle_error_en(en, msg) do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
 #define NON_IDLE(meas, i, cpu_num) cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * user)] + cpu_data_ptr[meas + cpu_num * (i + NUM_OF_CPU_FIELDS * nice_stat)] + \
@@ -31,11 +39,15 @@ static char trashc[10];
 static int trashi[10];
 
 static pthread_mutex_t meas_lock;
+static pthread_mutex_t flag_lock;
 static pthread_cond_t meas_condition;
 
 static uint8_t meas_done=0;
 static uint8_t calc_done=1;
 static FILE *fp;
+static uint8_t Reader_flag=1;
+static uint8_t Analyzer_flag=1;
+static uint8_t Printer_flag=1;
 
 static int Num_of_cpu=0;
 static int* cpu_data_ptr;
@@ -47,23 +59,28 @@ static volatile sig_atomic_t done = 0;
 static void term(int signum)
 {
     if(signum == SIGTERM)
-	    done = 1;
+	    done = sigterm_exit;
 }
 
 /*-------------------------------------THREADS----------------------------------*/
 void* Reader_Thread(void* args);
 void* Analyzer_Thread(void* args);
 void* Printer_Thread(void* args);
+void* Watchdog_Thread(void* args);
 
 void* Reader_Thread(void* args)
 {   
     struct timespec ts;
     (void)args;
     ts.tv_sec = 0;
-    ts.tv_nsec = 300000000;
+    ts.tv_nsec = 200000000; // 0.2s
 
 	while(1)
 	{
+        pthread_mutex_lock(&flag_lock);
+        Reader_flag=0;
+        pthread_mutex_unlock(&flag_lock);
+
         pthread_mutex_lock(&meas_lock);
         while(!calc_done)
         {
@@ -71,7 +88,7 @@ void* Reader_Thread(void* args)
         }
         calc_done=0;
 
-        printf("Reader IN\n");
+        LOG_MSG("Reader IN\n");
         for (uint8_t k=0; k<NUM_OF_MEASUR; k++)
         {
             fp = fopen("/proc/stat", "r");
@@ -97,10 +114,11 @@ void* Reader_Thread(void* args)
                 }
                 fclose(fp);
             }
-            nanosleep(&ts, NULL);
+            //if(k==0)
+                nanosleep(&ts, NULL);
         }
         meas_done=1;
-        printf("Reader OUT\n");
+        LOG_MSG("Reader OUT\n");
         pthread_cond_signal(&meas_condition);
         pthread_mutex_unlock(&meas_lock);
 	}
@@ -111,16 +129,20 @@ void* Analyzer_Thread(void* args)
     struct timespec ts;
     (void)args;
     ts.tv_sec = 0;
-    ts.tv_nsec = 500000000;
+    ts.tv_nsec = 400000000; //0.4s
 	while(1)
 	{
+        pthread_mutex_lock(&flag_lock);
+        Analyzer_flag=0;
+        pthread_mutex_unlock(&flag_lock);
+
         pthread_mutex_lock(&meas_lock);
         while(!meas_done)
         {
             pthread_cond_wait(&meas_condition, &meas_lock);
         }
         meas_done=0;
-        printf("Analyzer IN\n");
+        LOG_MSG("Analyzer IN\n");
         for (uint8_t i=0; i<Num_of_cpu; i++)
         {
             int idle_first = IDLE(first, i, Num_of_cpu);
@@ -133,11 +155,11 @@ void* Analyzer_Thread(void* args)
 
             int totald = total_next - total_first;
             int idled = idle_next - idle_first;
-
+           // printf("totald %d idled %d\n", totald, idled);
             cpu_usage_in_percent[i] = ((totald - idled)*100)/totald;
         }
         calc_done=1;
-        printf("Analyzer OUT\n");
+        LOG_MSG("Analyzer OUT\n");
         pthread_cond_signal(&meas_condition);
         pthread_mutex_unlock(&meas_lock);
         nanosleep(&ts, NULL);
@@ -153,16 +175,49 @@ void* Printer_Thread(void* args)
 
 	while(1)
 	{ 
+        pthread_mutex_lock(&flag_lock);
+        Printer_flag=0;
+        pthread_mutex_unlock(&flag_lock);
         pthread_mutex_lock(&meas_lock);
-        printf("Printer IN\n");
+        LOG_MSG("Printer IN\n");
         for (uint8_t i=0; i<Num_of_cpu; i++)
         {
             printf("Cpu %d: %d%% \n", i, cpu_usage_in_percent[i]);
         } 
-        printf("Printer OUT\n");
+        LOG_MSG("Printer OUT\n");
         pthread_mutex_unlock(&meas_lock);
         nanosleep(&ts, NULL);
 	}
+}
+
+void* Watchdog_Thread(void* args)
+{
+    struct timespec ts;
+    (void)args;
+    ts.tv_sec = 2;
+    ts.tv_nsec = 0;
+    nanosleep(&ts, NULL);
+    while(1)
+    {
+        LOG_MSG("Watchdog IN\n");
+        nanosleep(&ts, NULL);
+        pthread_mutex_lock(&flag_lock);
+        if(Reader_flag || Analyzer_flag || Printer_flag)
+        {
+            if(Reader_flag)
+                printf("Reader isn't working!\n"); // for log purpose
+            if(Analyzer_flag)
+                printf("Analyzer isn't working!\n"); // for log purpose
+            if(Printer_flag)
+                printf("Printer isn't working!\n"); // for log purpose
+            done = watchdog_exit;
+        }
+        Reader_flag = 1;
+        Analyzer_flag = 1;
+        Printer_flag = 1;
+        pthread_mutex_unlock(&flag_lock);
+        printf("Watchdog OUT\n");
+    }
 }
 
 int main()
@@ -170,6 +225,7 @@ int main()
     pthread_t id_reader;
     pthread_t id_analyzer;
     pthread_t id_printer;
+    pthread_t id_watchdog;
     int ret;
     struct sigaction action;
 
@@ -198,6 +254,7 @@ int main()
     sigaction(SIGTERM, &action, NULL);
 
     pthread_mutex_init(&meas_lock, NULL);
+    pthread_mutex_init(&flag_lock, NULL);
     pthread_cond_init(&meas_condition, NULL);
 
     ret = pthread_create(&id_reader, NULL, &Reader_Thread, NULL);
@@ -233,15 +290,41 @@ int main()
             return 0; /*return from main*/
     }
 
+    ret = pthread_create(&id_watchdog, NULL, &Watchdog_Thread, NULL);
+    if(ret==0)
+    {
+            printf("Thread created successfully.\n");
+    }
+    else
+    {
+            printf("Thread not created.\n");
+            return 0; /*return from main*/
+    }
     while (!done)
     {sleep(1);}
 
-    ret = pthread_cancel(id_printer);
+    if(done == sigterm_exit)
+        printf("SIGTERM exit\n"); //For log purpose
+    if(done == watchdog_exit)
+        printf("Watchdog exit\n"); //For log purpose
+
+    ret = pthread_cancel(id_watchdog);
     if(ret != 0)
         handle_error_en(ret, "pthread_cancel");
-    ret = pthread_join(id_printer, NULL);
+    ret = pthread_join(id_watchdog, NULL);
     if(ret != 0)
         handle_error_en(ret, "pthread_join");
+
+    printf("1\n");
+
+        ret = pthread_cancel(id_reader);
+    if(ret != 0)
+        handle_error_en(ret, "pthread_cancel");
+    ret = pthread_join(id_reader, NULL);
+    if(ret != 0)
+        handle_error_en(ret, "pthread_join");
+
+    printf("2\n");
 
     ret = pthread_cancel(id_analyzer);
     if(ret != 0)
@@ -250,14 +333,19 @@ int main()
     if(ret != 0)
         handle_error_en(ret, "pthread_join");
 
-    ret = pthread_cancel(id_reader);
+    printf("3\n");
+
+    ret = pthread_cancel(id_printer);
     if(ret != 0)
         handle_error_en(ret, "pthread_cancel");
-    ret = pthread_join(id_reader, NULL);
+    ret = pthread_join(id_printer, NULL);
     if(ret != 0)
         handle_error_en(ret, "pthread_join");
+    
+    printf("4\n");
 
     pthread_mutex_destroy(&meas_lock);
+    pthread_mutex_destroy(&flag_lock);
 
     if (fp==NULL)
         fclose(fp);

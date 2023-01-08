@@ -77,6 +77,7 @@ CPU_Percentage = (totald - idled)/totald
 // try with github copilot, ale ogólnie to 1. robimy notyfikacje, a poza tymi notyifkacjami
 // w sytuacji wktórej reader jest szybszy niż analyzer, trzeba zrobić jeszcze buforowanie
 // chyba albo notyfikacje albo buforowanie
+// też gdy buforujemy to printer może nam nie printować bieżącego zużycia cpu, tylko wcześniejsze
 
 //6. Należy także zaimplementować przechwytywanie sygnału SIGTERM i zadbać o odpowiednie zamknięcie
 //aplikacji (zamknięcie pliku, zwolnienie pamięci, zakończenie wątków).
