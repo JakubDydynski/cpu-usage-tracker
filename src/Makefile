@@ -6,6 +6,7 @@ LDLIBS=
 ODIR = obj
 BUILD = build
 FLAGS =
+TESTSDIR=../test
 
 
 _DEPS = main.h util.h
@@ -44,4 +45,8 @@ $(BUILD)/all: $(OBJ)
 clean:
 	rm -f $(ODIR)/*.o *~ core $(INCDIR)/*~ $(BUILD)/*
 
+
 test:
+	gcc ../test/tests.c util.c -I$(IDIR) -o tests
+	mv tests ../test
+	./../test/tests
