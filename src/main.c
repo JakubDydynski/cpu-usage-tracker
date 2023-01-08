@@ -1,5 +1,15 @@
 #include "main.h"
 #include "util.h"
+#include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <errno.h>
+#include <stdint.h>
+#include <signal.h>
+#include <string.h>
+#include <stdlib.h>
+#include <time.h>
+
 /*-------------------------------------DEFINES----------------------------------*/
  #define handle_error_en(en, msg) do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
@@ -17,32 +27,38 @@
 // }cpu_usage_t;
 
 /*-------------------------------------GLOBALS----------------------------------*/
-char trashc[10];
-int trashi[10];
+static char trashc[10];
+static int trashi[10];
 
-pthread_mutex_t meas_lock;
-pthread_cond_t meas_condition;
+static pthread_mutex_t meas_lock;
+static pthread_cond_t meas_condition;
 
-uint8_t meas_done=0;
-uint8_t calc_done=1;
-FILE *fp;
+static uint8_t meas_done=0;
+static uint8_t calc_done=1;
+static FILE *fp;
 
-uint8_t Num_of_cpu=0;
-uint32_t* cpu_data_ptr;
-uint32_t* cpu_usage_in_percent;
+static int Num_of_cpu=0;
+static int* cpu_data_ptr;
+static int* cpu_usage_in_percent;
 
 /*-------------------------------------SIGTERM----------------------------------*/
-volatile sig_atomic_t done = 0;
+static volatile sig_atomic_t done = 0;
  
-void term(int signum)
+static void term(int signum)
 {
-		done = 1;
+    if(signum == SIGTERM)
+	    done = 1;
 }
 
 /*-------------------------------------THREADS----------------------------------*/
+void* Reader_Thread(void* args);
+void* Analyzer_Thread(void* args);
+void* Printer_Thread(void* args);
+
 void* Reader_Thread(void* args)
 {   
     struct timespec ts;
+    (void)args;
     ts.tv_sec = 0;
     ts.tv_nsec = 300000000;
 
@@ -93,6 +109,7 @@ void* Reader_Thread(void* args)
 void* Analyzer_Thread(void* args)
 {
     struct timespec ts;
+    (void)args;
     ts.tv_sec = 0;
     ts.tv_nsec = 500000000;
 	while(1)
@@ -106,16 +123,16 @@ void* Analyzer_Thread(void* args)
         printf("Analyzer IN\n");
         for (uint8_t i=0; i<Num_of_cpu; i++)
         {
-            uint32_t idle_first = IDLE(first, i, Num_of_cpu);
-            uint32_t non_idle_first = NON_IDLE(first, i, Num_of_cpu);
-            uint32_t total_first = idle_first + non_idle_first;
+            int idle_first = IDLE(first, i, Num_of_cpu);
+            int non_idle_first = NON_IDLE(first, i, Num_of_cpu);
+            int total_first = idle_first + non_idle_first;
 
-            uint32_t idle_next = IDLE(next, i, Num_of_cpu);
-            uint32_t non_idle_next = NON_IDLE(next, i, Num_of_cpu);
-            uint32_t total_next = idle_next + non_idle_next;
+            int idle_next = IDLE(next, i, Num_of_cpu);
+            int non_idle_next = NON_IDLE(next, i, Num_of_cpu);
+            int total_next = idle_next + non_idle_next;
 
-            uint32_t totald = total_next - total_first;
-            uint32_t idled = idle_next - idle_first;
+            int totald = total_next - total_first;
+            int idled = idle_next - idle_first;
 
             cpu_usage_in_percent[i] = ((totald - idled)*100)/totald;
         }
@@ -130,6 +147,7 @@ void* Analyzer_Thread(void* args)
 void* Printer_Thread(void* args)
 {
     struct timespec ts;
+    (void)args;
     ts.tv_sec = 1;
     ts.tv_nsec = 0;
 
@@ -156,13 +174,19 @@ int main()
     struct sigaction action;
 
     Num_of_cpu = count_cpu_number();
-    cpu_data_ptr = (uint32_t*)malloc(NUM_OF_CPU_FIELDS * NUM_OF_MEASUR * Num_of_cpu * sizeof(uint32_t));
+    if (Num_of_cpu < 0)
+    {
+        perror("Couldn't compute num of cpu");
+        return EXIT_FAILURE;
+    }
+
+    cpu_data_ptr = (int*)malloc(NUM_OF_CPU_FIELDS * NUM_OF_MEASUR * (unsigned)Num_of_cpu * sizeof(int));
     if (!cpu_data_ptr) 
     {
         perror("malloc");
         return EXIT_FAILURE;
     }
-    cpu_usage_in_percent = (uint32_t*)malloc(Num_of_cpu * sizeof(uint32_t));
+    cpu_usage_in_percent = (int*)malloc((unsigned)Num_of_cpu * sizeof(int));
     if (!cpu_usage_in_percent) 
     {
         perror("malloc");
@@ -210,9 +234,7 @@ int main()
     }
 
     while (!done)
-    {}
-
-    void* res=NULL;
+    {sleep(1);}
 
     ret = pthread_cancel(id_printer);
     if(ret != 0)
@@ -237,7 +259,10 @@ int main()
 
     pthread_mutex_destroy(&meas_lock);
 
-    fclose(fp);
+    if (fp==NULL)
+        fclose(fp);
+    free(cpu_data_ptr);
+    free(cpu_usage_in_percent);
 
     printf("done.\n");
     return 0;
