@@ -1,5 +1,9 @@
 # cpu-usage-tracker
 
+There is a bug where cpu is below 0% after changing buffer to 1D instead of 3D, last working commit is aa62acd5eed298448abab43aed9256e7236bfd0c
+
+
+
 SIGTERM:
 "I compiled the example into sigterm-example. Starting it and sending a SIGTERM by using
 
@@ -16,6 +20,8 @@ Finished loop run 3.
 Done."
 
 
+
+
 Makefile example#
 
 build:
@@ -26,3 +32,6 @@ clean:
 
 test:
     make test
+    TBD
+
+
