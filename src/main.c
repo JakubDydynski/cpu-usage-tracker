@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <signal.h>
+#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
@@ -227,6 +228,7 @@ int main()
     pthread_t id_watchdog;
     int ret;
     struct sigaction action;
+    void* res=NULL;
 
     Num_of_cpu = count_cpu_number();
     if (Num_of_cpu < 0)
@@ -310,38 +312,42 @@ int main()
     ret = pthread_cancel(id_watchdog);
     if(ret != 0)
         handle_error_en(ret, "pthread_cancel");
-    ret = pthread_join(id_watchdog, NULL);
+    ret = pthread_join(id_watchdog, &res);
     if(ret != 0)
         handle_error_en(ret, "pthread_join");
+    printf("Returned value was %d\n", (int )(intptr_t) res);
 
-    printf("1\n");
+    LOG_MSG("1\n");
 
-        ret = pthread_cancel(id_reader);
+    ret = pthread_cancel(id_reader);
     if(ret != 0)
         handle_error_en(ret, "pthread_cancel");
-    ret = pthread_join(id_reader, NULL);
+    ret = pthread_join(id_reader, &res);
     if(ret != 0)
         handle_error_en(ret, "pthread_join");
+    printf("Returned value was %d\n", (int )(intptr_t) res);
 
-    printf("2\n");
+    LOG_MSG("2\n");
 
     ret = pthread_cancel(id_analyzer);
     if(ret != 0)
         handle_error_en(ret, "pthread_cancel");
-    ret = pthread_join(id_analyzer, NULL);
+    ret = pthread_join(id_analyzer, &res);
     if(ret != 0)
         handle_error_en(ret, "pthread_join");
+    printf("Returned value was %d\n", (int )(intptr_t) res);
 
-    printf("3\n");
+    LOG_MSG("3\n");
 
     ret = pthread_cancel(id_printer);
     if(ret != 0)
         handle_error_en(ret, "pthread_cancel");
-    ret = pthread_join(id_printer, NULL);
+    ret = pthread_join(id_printer, &res);
     if(ret != 0)
         handle_error_en(ret, "pthread_join");
-    
-    printf("4\n");
+    printf("Returned value was %d\n", (int )(intptr_t) res);
+
+    LOG_MSG("4\n");
 
     pthread_mutex_destroy(&meas_lock);
     pthread_mutex_destroy(&flag_lock);
