@@ -28,7 +28,7 @@ int count_cpu_number(void)
         }
         ret--; // first cpu is total stats of all cpus
     }
-    free(trash);
-    fclose(fp);
+    //free(trash);
+    //fclose(fp);
     return ret;
 }
